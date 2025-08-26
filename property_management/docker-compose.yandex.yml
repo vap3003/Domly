@@ -1,0 +1,137 @@
+# Docker Compose конфигурация с поддержкой Yandex Cloud Monitoring
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:14
+    environment:
+      POSTGRES_DB: property_management
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  redis:
+    image: redis:6-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Yandex Unified Agent для сбора метрик
+  unified-agent:
+    image: cr.yandex/yc/unified-agent:latest
+    container_name: unified-agent
+    environment:
+      - YC_FOLDER_ID=${YC_FOLDER_ID}
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+    volumes:
+      - ./config/yandex-cloud/unified-agent.yml:/etc/unified-agent/config.yml
+      - ./config/yandex-cloud/service-account-key.json:/etc/unified-agent/service-account-key.json:ro
+      - /tmp/unified-agent:/tmp/unified-agent
+    depends_on:
+      - property-service
+      - tenant-service
+      - monitoring-service
+      - api-gateway
+    restart: unless-stopped
+    profiles:
+      - yandex-monitoring
+
+  # Сервисы приложения (будут добавлены позже)
+  property-service:
+    build: ./services/property-service
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://admin:password@postgres:5432/property_management
+      - REDIS_URL=redis://redis:6379
+      - YC_MONITORING_ENABLED=${YC_MONITORING_ENABLED:-false}
+      - YC_FOLDER_ID=${YC_FOLDER_ID}
+      - YC_SERVICE_ACCOUNT_KEY_PATH=/app/config/service-account-key.json
+    volumes:
+      - ./config/yandex-cloud/service-account-key.json:/app/config/service-account-key.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles:
+      - app
+
+  tenant-service:
+    build: ./services/tenant-service
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://admin:password@postgres:5432/property_management
+      - REDIS_URL=redis://redis:6379
+      - YC_MONITORING_ENABLED=${YC_MONITORING_ENABLED:-false}
+      - YC_FOLDER_ID=${YC_FOLDER_ID}
+      - YC_SERVICE_ACCOUNT_KEY_PATH=/app/config/service-account-key.json
+    volumes:
+      - ./config/yandex-cloud/service-account-key.json:/app/config/service-account-key.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles:
+      - app
+
+  monitoring-service:
+    build: ./services/monitoring-service
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://admin:password@postgres:5432/property_management
+      - REDIS_URL=redis://redis:6379
+      - YC_MONITORING_ENABLED=${YC_MONITORING_ENABLED:-false}
+      - YC_FOLDER_ID=${YC_FOLDER_ID}
+      - YC_SERVICE_ACCOUNT_KEY_PATH=/app/config/service-account-key.json
+    volumes:
+      - ./config/yandex-cloud/service-account-key.json:/app/config/service-account-key.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles:
+      - app
+
+  api-gateway:
+    build: ./services/api-gateway
+    environment:
+      - PROPERTY_SERVICE_URL=http://property-service:8000
+      - TENANT_SERVICE_URL=http://tenant-service:8000
+      - MONITORING_SERVICE_URL=http://monitoring-service:8000
+      - YC_MONITORING_ENABLED=${YC_MONITORING_ENABLED:-false}
+      - YC_FOLDER_ID=${YC_FOLDER_ID}
+      - YC_SERVICE_ACCOUNT_KEY_PATH=/app/config/service-account-key.json
+    volumes:
+      - ./config/yandex-cloud/service-account-key.json:/app/config/service-account-key.json:ro
+    ports:
+      - "${API_GATEWAY_PORT:-8000}:8000"
+    depends_on:
+      - property-service
+      - tenant-service
+      - monitoring-service
+    restart: unless-stopped
+    profiles:
+      - app
+
+volumes:
+  postgres_data:
+  redis_data:

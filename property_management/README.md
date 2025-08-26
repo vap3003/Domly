@@ -18,6 +18,7 @@
 - **Кэширование**: Redis 6+
 - **Очереди**: Celery
 - **Контейнеризация**: Docker, Docker Compose
+- **Мониторинг**: Yandex Cloud Monitoring + Prometheus (опционально)
 
 ## Структура проекта
 
@@ -76,6 +77,18 @@ docker-compose ps
 - API Документация: http://localhost:8000/docs
 - Мониторинг (Grafana): http://localhost:3000
 - Метрики (Prometheus): http://localhost:9090
+
+### Запуск с Yandex Cloud Monitoring
+
+```bash
+# Настройка YC Monitoring (один раз)
+./scripts/setup-yc-monitoring.sh
+
+# Запуск с YC Monitoring
+docker-compose -f docker-compose.yandex.yml --profile app --profile yandex-monitoring up -d
+```
+
+Подробнее: [docs/YANDEX_CLOUD_MONITORING.md](docs/YANDEX_CLOUD_MONITORING.md)
 
 ## Разработка
 

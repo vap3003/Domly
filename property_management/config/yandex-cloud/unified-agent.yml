@@ -1,0 +1,84 @@
+# Конфигурация Yandex Unified Agent для сбора метрик
+# Документация: https://cloud.yandex.ru/docs/monitoring/concepts/data-collection/unified-agent
+
+status:
+  port: 16241
+
+storages:
+  - name: main
+    plugin: fs
+    config:
+      directory: /tmp/unified-agent/main
+      max_partition_size: 100mb
+      max_segment_size: 10mb
+
+channels:
+  - name: cloud_monitoring
+    channel_kind: BUFFERED
+    connector:
+      plugin: yc_metrics
+      config:
+        folder_id: "${YC_FOLDER_ID}"
+        iam:
+          service_account:
+            key_file: "/etc/unified-agent/service-account-key.json"
+    storage: main
+
+routes:
+  - input:
+      plugin: metrics_pull
+      config:
+        url: http://property-service:8000/metrics
+        format:
+          plugin: prometheus
+        namespace: property_service
+        labels:
+          service: property-service
+          environment: "${ENVIRONMENT}"
+    channel: cloud_monitoring
+
+  - input:
+      plugin: metrics_pull
+      config:
+        url: http://tenant-service:8000/metrics
+        format:
+          plugin: prometheus
+        namespace: tenant_service
+        labels:
+          service: tenant-service
+          environment: "${ENVIRONMENT}"
+    channel: cloud_monitoring
+
+  - input:
+      plugin: metrics_pull
+      config:
+        url: http://monitoring-service:8000/metrics
+        format:
+          plugin: prometheus
+        namespace: monitoring_service
+        labels:
+          service: monitoring-service
+          environment: "${ENVIRONMENT}"
+    channel: cloud_monitoring
+
+  - input:
+      plugin: metrics_pull
+      config:
+        url: http://api-gateway:8000/metrics
+        format:
+          plugin: prometheus
+        namespace: api_gateway
+        labels:
+          service: api-gateway
+          environment: "${ENVIRONMENT}"
+    channel: cloud_monitoring
+
+  # Системные метрики Docker контейнеров
+  - input:
+      plugin: linux_metrics
+      config:
+        namespace: system
+        labels:
+          service: property-management
+          environment: "${ENVIRONMENT}"
+    channel: cloud_monitoring
